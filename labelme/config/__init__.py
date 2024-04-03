@@ -30,7 +30,7 @@ def get_default_config():
         config = yaml.safe_load(f)
 
     # save default config to ~/.labelmerc
-    user_config_file = osp.join(osp.expanduser("~"), ".labelmerc")
+    user_config_file = osp.join(osp.abspath(osp.curdir) , ".labelmerc") # osp.join(osp.expanduser("~"), ".labelmerc")
     if not osp.exists(user_config_file):
         try:
             shutil.copy(config_file, user_config_file)
@@ -55,6 +55,41 @@ def validate_config_item(key, value):
         )
 
 
+EXPORT_MODULE="export"
+
+def dump_sample_export_script():
+    sample_script_file = "%s.py" %(EXPORT_MODULE)
+    if osp.exists(sample_script_file):
+        return
+    
+    with open(sample_script_file, "w") as fp:
+        fp.write('''
+import os,shutil 
+
+def sample(targetDir, sourceImages, labelextension):
+    """Export the current label format to your desired label format
+
+    Args:
+        targetDir (str): export directory
+        sourceImages (list): list of labeled pictures
+        labelextension (str): current annotation file suffix name
+
+    Returns:
+        int: return the number of exports
+    """
+    for idx, image_path in enumerate(sourceImages):
+        
+        target_basename = "{:04d}".format(idx)
+        filepath, image_ext = os.path.splitext(image_path)
+        label_file = filepath + labelextension
+        
+        shutil.copyfile(image_path,  os.path.join(targetDir, "%s%s" % (target_basename, image_ext)))
+        shutil.copyfile(label_file,  os.path.join(targetDir, "%s%s" % (target_basename, labelextension)))
+
+    return len(sourceImages)
+ ''')
+        
+
 def get_config(config_file_or_yaml=None, config_from_args=None):
     # 1. default config
     config = get_default_config()
@@ -72,4 +107,7 @@ def get_config(config_file_or_yaml=None, config_from_args=None):
     if config_from_args is not None:
         update_dict(config, config_from_args, validate_item=validate_config_item)
 
+    # 4. support export, export sample modules
+    dump_sample_export_script()
+    
     return config

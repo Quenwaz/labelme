@@ -18,7 +18,7 @@ from qtpy.QtCore import Qt
 from labelme import PY2
 from labelme import __appname__
 from labelme.ai import MODELS
-from labelme.config import get_config
+from labelme.config import get_config,EXPORT_MODULE
 from labelme.label_file import LabelFile
 from labelme.label_file import LabelFileError
 from labelme.logger import logger
@@ -32,6 +32,9 @@ from labelme.widgets import LabelListWidgetItem
 from labelme.widgets import ToolBar
 from labelme.widgets import UniqueLabelQListWidget
 from labelme.widgets import ZoomWidget
+import importlib
+from typing import Callable
+
 
 from . import utils
 
@@ -145,13 +148,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fileSearch = QtWidgets.QLineEdit()
         self.fileSearch.setPlaceholderText(self.tr("Search Filename"))
         self.fileSearch.textChanged.connect(self.fileSearchChanged)
-        self.fileListWidget = QtWidgets.QListWidget()
-        self.fileListWidget.itemSelectionChanged.connect(self.fileSelectionChanged)
+        self.fileTreeWidget = QtWidgets.QTreeWidget()
+        # self.fileTreeWidget.setColumnCount(2)
+        self.fileTreeWidget.itemSelectionChanged.connect(self.fileTreeSelectionChanged)
+        self.fileTreeWidget.setHeaderHidden(True)
+        self.fileTreeWidgetDict = dict()
+        
         fileListLayout = QtWidgets.QVBoxLayout()
         fileListLayout.setContentsMargins(0, 0, 0, 0)
         fileListLayout.setSpacing(0)
         fileListLayout.addWidget(self.fileSearch)
-        fileListLayout.addWidget(self.fileListWidget)
+        fileListLayout.addWidget(self.fileTreeWidget)
         self.file_dock = QtWidgets.QDockWidget(self.tr("File List"), self)
         self.file_dock.setObjectName("Files")
         fileListWidget = QtWidgets.QWidget()
@@ -197,10 +204,10 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._config[dock]["show"] is False:
                 getattr(self, dock).setVisible(False)
 
+        self.addDockWidget(Qt.RightDockWidgetArea, self.file_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.flag_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.label_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.shape_dock)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.file_dock)
 
         # Actions
         action = functools.partial(utils.newAction, self)
@@ -213,7 +220,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tr("Quit application"),
         )
         open_ = action(
-            self.tr("&Open\n"),
+            self.tr("&Open"),
             self.openFile,
             shortcuts["open"],
             "open",
@@ -258,6 +265,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tr("Save labels to a different file"),
             enabled=False,
         )
+        
+        exportMenu = QtWidgets.QMenu(self.tr("Export"))
+        exportMenu.setEnabled(False)
 
         deleteFile = action(
             self.tr("&Delete File"),
@@ -287,7 +297,7 @@ class MainWindow(QtWidgets.QMainWindow):
         saveAuto.setChecked(self._config["auto_save"])
 
         saveWithImageData = action(
-            text="Save With Image Data",
+            text=self.tr("Save With Image Data"),
             slot=self.enableSaveImageWithData,
             tip="Save image data in label file",
             checkable=True,
@@ -622,6 +632,7 @@ class MainWindow(QtWidgets.QMainWindow):
             changeOutputDir=changeOutputDir,
             save=save,
             saveAs=saveAs,
+            export=exportMenu,
             open=open_,
             close=close,
             deleteFile=deleteFile,
@@ -654,7 +665,7 @@ class MainWindow(QtWidgets.QMainWindow):
             zoomActions=zoomActions,
             openNextImg=openNextImg,
             openPrevImg=openPrevImg,
-            fileMenuActions=(open_, opendir, save, saveAs, close, quit),
+            fileMenuActions=(open_, opendir, save, exportMenu,saveAs, close, quit),
             tool=(),
             # XXX: need to add some actions here to activate the shortcut
             editMenu=(
@@ -727,6 +738,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 opendir,
                 self.menus.recentFiles,
                 save,
+                exportMenu,
                 saveAs,
                 saveAuto,
                 changeOutputDir,
@@ -1070,6 +1082,16 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             action.triggered.connect(functools.partial(self.loadRecent, f))
             menu.addAction(action)
+        
+        self.actions.export.clear()
+        if self._config.get("export", None):
+            for expfmt in self._config["export"]:
+                icon = utils.newIcon("labels")
+                action = QtWidgets.QAction(
+                    icon, "&%s" % (expfmt), self
+                )
+                action.triggered.connect(functools.partial(self.exportFile, expfmt))
+                self.actions.export.addAction(action)
 
     def popLabelListMenu(self, point):
         self.menus.labelList.exec_(self.labelList.mapToGlobal(point))
@@ -1143,16 +1165,24 @@ class MainWindow(QtWidgets.QMainWindow):
             load=False,
         )
 
-    def fileSelectionChanged(self):
-        items = self.fileListWidget.selectedItems()
-        if not items:
+                
+    def fileTreeSelectionChanged(self):
+        tree_items = self.fileTreeWidget.selectedItems()
+        if not tree_items:
             return
-        item = items[0]
+        item = tree_items[0]
+        
+        if item.childCount() > 0:
+            return
 
         if not self.mayContinue():
             return
 
-        currIndex = self.imageList.index(str(item.text()))
+        filepath = item.data(0, Qt.ItemDataRole.UserRole)
+        if not filepath:
+            return
+        
+        currIndex = self.imageList.index(str(filepath))
         if currIndex < len(self.imageList):
             filename = self.imageList[currIndex]
             if filename:
@@ -1331,11 +1361,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 flags=flags,
             )
             self.labelFile = lf
-            items = self.fileListWidget.findItems(self.imagePath, Qt.MatchExactly)
-            if len(items) > 0:
-                if len(items) != 1:
-                    raise RuntimeError("There are duplicate files.")
-                items[0].setCheckState(Qt.Checked)
+            
+            if self.imagePath in self.fileTreeWidgetDict:
+                item = self.fileTreeWidgetDict[self.imagePath]
+                item.setCheckState(0,Qt.Checked)
+                label_count = item.parent().data(0,Qt.ItemDataRole.UserRole) + 1
+                item.parent().setData(0, Qt.ItemDataRole.UserRole, label_count)
+                item.parent().setText(0, f"{self.imagePath.split(os.path.sep)[-2]}({label_count}/{item.parent().childCount()})")
+            
             # disable allows next and previous image to proceed
             # self.filename = filename
             return True
@@ -1516,14 +1549,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def loadFile(self, filename=None):
         """Load the specified file, or the last opened file if None."""
-        # changing fileListWidget loads file
-        if filename in self.imageList and (
-            self.fileListWidget.currentRow() != self.imageList.index(filename)
-        ):
-            self.fileListWidget.setCurrentRow(self.imageList.index(filename))
-            self.fileListWidget.repaint()
-            return
+        # changing fileTreeWidget loads file
+        if self.fileTreeWidget.currentItem():
+            itemdata = self.fileTreeWidget.currentItem().data(0, Qt.ItemDataRole.UserRole)
+            if filename in self.imageList and(
+                itemdata and str(itemdata) != filename
+            ):
+                self.fileTreeWidget.setCurrentItem(self.fileTreeWidgetDict[filename])
+                self.fileTreeWidget.repaint()
+                return 
 
+        
         self.resetState()
         self.canvas.setEnabled(False)
         if filename is None:
@@ -1830,8 +1866,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if current_filename in self.imageList:
             # retain currently selected file
-            self.fileListWidget.setCurrentRow(self.imageList.index(current_filename))
-            self.fileListWidget.repaint()
+            self.fileTreeWidget.setCurrentItem(self.fileTreeWidgetDict[current_filename])
+            self.fileTreeWidget.repaint()
 
     def saveFile(self, _value=False):
         assert not self.image.isNull(), "cannot save empty image"
@@ -1847,7 +1883,54 @@ class MainWindow(QtWidgets.QMainWindow):
     def saveFileAs(self, _value=False):
         assert not self.image.isNull(), "cannot save empty image"
         self._saveFile(self.saveFileDialog())
+        
+    def exportFile(self, fmt:str):
+        
+        for expfmt in self._config["export"]:
+            if fmt != expfmt:
+                continue
+            
+            if self.lastOpenDir:
+                if not self.mayContinue():
+                    return
+                
+                labeled_images = self.labeled_image_list
+                if not labeled_images:
+                    self.errorMessage(self.tr("error"),self.tr("not exist labeled image"))
+                    return
 
+                default_output_dir = self.lastOpenDir
+                if default_output_dir is None and self.filename:
+                    default_output_dir = osp.dirname(self.filename)
+                if default_output_dir is None:
+                    default_output_dir = self.currentPath()
+                    
+                targetDirPath = str(
+                    QtWidgets.QFileDialog.getExistingDirectory(
+                        self,
+                        self.tr("%s - Choose Export Directory") % __appname__,
+                        default_output_dir,
+                        QtWidgets.QFileDialog.ShowDirsOnly
+                        | QtWidgets.QFileDialog.DontResolveSymlinks,
+                    )
+                )
+                if not targetDirPath:
+                    return
+                
+                if len(os.listdir(targetDirPath)) != 0:
+                    self.errorMessage(self.tr("error"),self.tr("directory not empty"))
+                    return
+                try:
+                    
+                    exporter = importlib.import_module(EXPORT_MODULE)
+                    cvt = getattr(exporter,expfmt, None)
+                    if cvt:
+                        ret = cvt(targetDirPath, labeled_images, LabelFile.suffix)
+                        self.infoMessage(self.tr("info"), self.tr("exported %d annotation data") % (ret,))
+                except Exception as e:
+                    self.errorMessage(self.tr("error"), str(e))
+            
+    
     def saveFileDialog(self):
         caption = self.tr("%s - Choose File") % __appname__
         filters = self.tr("Label files (*%s)") % LabelFile.suffix
@@ -1890,6 +1973,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setClean()
         self.toggleActions(False)
         self.canvas.setEnabled(False)
+        self.actions.export.setEnabled(False)
         self.actions.saveAs.setEnabled(False)
 
     def getLabelFile(self):
@@ -1914,8 +1998,7 @@ class MainWindow(QtWidgets.QMainWindow):
             os.remove(label_file)
             logger.info("Label file is removed: {}".format(label_file))
 
-            item = self.fileListWidget.currentItem()
-            item.setCheckState(Qt.Unchecked)
+            self.fileTreeWidget.currentItem().setCheckState(0,Qt.Unchecked)
 
             self.resetState()
 
@@ -1958,6 +2041,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def errorMessage(self, title, message):
         return QtWidgets.QMessageBox.critical(
+            self, title, "<p><b>%s</b></p>%s" % (title, message)
+        )
+        
+    def infoMessage(self, title, message):
+        return QtWidgets.QMessageBox.information(
             self, title, "<p><b>%s</b></p>%s" % (title, message)
         )
 
@@ -2023,13 +2111,32 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         )
         self.importDirImages(targetDirPath)
-
+        
+    def get_all_leaf_item_data(self, filenames:list, topitem:QtWidgets.QTreeWidgetItem, cond:Callable[[QtWidgets.QTreeWidgetItem], bool]=None):
+        if topitem == None:
+            return
+        
+        if topitem.childCount() == 0:
+            filenames.append(str(topitem.data(0, Qt.ItemDataRole.UserRole)))
+            return
+        
+        for i in range(topitem.childCount()):
+            child = topitem.child(i)
+            if cond and not cond(child):
+                continue
+            self.get_all_leaf_item_data(filenames, child)
+            
+            
     @property
     def imageList(self):
         lst = []
-        for i in range(self.fileListWidget.count()):
-            item = self.fileListWidget.item(i)
-            lst.append(item.text())
+        self.get_all_leaf_item_data(lst,self.fileTreeWidget.topLevelItem(0))
+        return lst
+    
+    @property
+    def labeled_image_list(self):
+        lst = []
+        self.get_all_leaf_item_data(lst,self.fileTreeWidget.topLevelItem(0), lambda item:item.checkState(0) == Qt.Checked)
         return lst
 
     def importDroppedImageFiles(self, imageFiles):
@@ -2038,6 +2145,38 @@ class MainWindow(QtWidgets.QMainWindow):
             for fmt in QtGui.QImageReader.supportedImageFormats()
         ]
 
+        def get_common_prefix(imagefiles):
+            sz_img = len(imagefiles)
+            
+            if sz_img == 1:
+                return os.path.split(imagefiles[0])[0]
+            
+            prefix:str = imagefiles[0]
+            for img in imagefiles[1:]:
+                index = len(prefix)
+                for i, c in enumerate(img):
+                    if i < len(prefix):
+                        if c != prefix[i]:
+                            index = i
+                            break
+                    else:
+                        index = i
+                        break
+                prefix = prefix[:index]
+            if prefix.endswith(os.path.sep):
+                prefix = prefix[:-1]
+            return prefix
+
+        common_folder = get_common_prefix(imageFiles)
+        topitems = self.fileTreeWidget.findItems(common_folder, Qt.MatchFlag.MatchExactly)
+        if topitems:
+            topItem = topitems[0]
+        else:
+            topItem = QtWidgets.QTreeWidgetItem()
+            topItem.setText(0,common_folder)
+            self.fileTreeWidget.addTopLevelItem(topItem)
+        
+        checked_count = 0
         self.filename = None
         for file in imageFiles:
             if file in self.imageList or not file.lower().endswith(tuple(extensions)):
@@ -2046,14 +2185,20 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.output_dir:
                 label_file_without_path = osp.basename(label_file)
                 label_file = osp.join(self.output_dir, label_file_without_path)
-            item = QtWidgets.QListWidgetItem(file)
-            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            
+            filetreeitem = QtWidgets.QTreeWidgetItem()
+            filetreeitem.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             if QtCore.QFile.exists(label_file) and LabelFile.is_label_file(label_file):
-                item.setCheckState(Qt.Checked)
+                filetreeitem.setCheckState(0, Qt.Checked)
+                checked_count +=1
             else:
-                item.setCheckState(Qt.Unchecked)
-            self.fileListWidget.addItem(item)
-
+                filetreeitem.setCheckState(0, Qt.Unchecked)
+            filetreeitem.setText(0,os.path.split(file)[1])
+            filetreeitem.setData(0, Qt.ItemDataRole.UserRole, file)
+            self.fileTreeWidgetDict[file] = filetreeitem
+            topItem.addChild(filetreeitem)
+        topItem.setText(1, f"{checked_count}/{topItem.childCount()}")
+            
         if len(self.imageList) > 1:
             self.actions.openNextImg.setEnabled(True)
             self.actions.openPrevImg.setEnabled(True)
@@ -2066,10 +2211,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not self.mayContinue() or not dirpath:
             return
+        
+        self.actions.export.setEnabled(True)
 
         self.lastOpenDir = dirpath
         self.filename = None
-        self.fileListWidget.clear()
+        self.fileTreeWidget.clear()
+        self.fileTreeWidgetDict.clear()
 
         filenames = self.scanAllImages(dirpath)
         if pattern:
@@ -2077,18 +2225,57 @@ class MainWindow(QtWidgets.QMainWindow):
                 filenames = [f for f in filenames if re.search(pattern, f)]
             except re.error:
                 pass
+        
+        tree_dict= dict()
+        topItem = QtWidgets.QTreeWidgetItem()
+        topItem.setText(0,self.lastOpenDir)
+        self.fileTreeWidget.addTopLevelItem(topItem)
+        self.fileTreeWidget.setExpanded(self.fileTreeWidget.indexFromItem(topItem,0), True)
         for filename in filenames:
             label_file = osp.splitext(filename)[0] + ".json"
             if self.output_dir:
                 label_file_without_path = osp.basename(label_file)
                 label_file = osp.join(self.output_dir, label_file_without_path)
-            item = QtWidgets.QListWidgetItem(filename)
-            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            
+            filetreeitem = QtWidgets.QTreeWidgetItem()
+            filetreeitem.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+
             if QtCore.QFile.exists(label_file) and LabelFile.is_label_file(label_file):
-                item.setCheckState(Qt.Checked)
+                filetreeitem.setCheckState(0,Qt.Checked)
             else:
-                item.setCheckState(Qt.Unchecked)
-            self.fileListWidget.addItem(item)
+                filetreeitem.setCheckState(0,Qt.Unchecked)
+                
+            relpath:str = os.path.relpath(filename, self.lastOpenDir)
+            dirs = relpath.split(os.path.sep)
+            current_parent_key = os.path.sep.join(dirs[:-1])
+            if not current_parent_key in tree_dict:
+                lastdir = ""
+                for dir in dirs[:-1]:
+                    if not dir in tree_dict:
+                        new_tree_item = QtWidgets.QTreeWidgetItem()
+                        new_tree_item.setText(0,dir)
+                        
+                        key = dir
+                        if not lastdir:
+                            topItem.addChild(new_tree_item)
+                        else:
+                            os.path.sep.join([lastdir, dir])
+                        tree_dict[key] = {
+                            "item": new_tree_item,
+                            "count": 0
+                        }
+                
+            filetreeitem.setText(0, dirs[-1])
+            filetreeitem.setData(0, Qt.ItemDataRole.UserRole, filename)
+            self.fileTreeWidgetDict[filename] = filetreeitem
+            current_parent_object = tree_dict[current_parent_key]
+            if filetreeitem.checkState(0) == Qt.Checked:
+                current_parent_object["count"] += 1
+            current_parent_item = current_parent_object["item"]
+            current_parent_item.addChild(filetreeitem)
+            current_parent_item.setText(0, f"{dirs[-2]}({current_parent_object['count']}/{current_parent_item.childCount()})")
+            current_parent_item.setData(0, Qt.ItemDataRole.UserRole, current_parent_object["count"])
+            
         self.openNextImg(load=load)
 
     def scanAllImages(self, folderPath):

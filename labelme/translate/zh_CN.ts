@@ -613,5 +613,45 @@ Polygons</source>
         <source>%s - Open Directory</source>
         <translation>%s - 打开目录</translation>
     </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>Save With Image Data</source>
+        <translation>保存图片base64到标注文件</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>info</source>
+        <translation>信息</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>error</source>
+        <translation>错误</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>Export</source>
+        <translation>导出</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>not exist labeled image</source>
+        <translation>不存在标注的图片</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>%s - Choose Export Directory</source>
+        <translation>%s - 选择导出目录</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>directory not empty</source>
+        <translation>目录不为空</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="1600"/>
+        <source>exported %d annotation data</source>
+        <translation>已导出%d个标注数据</translation>
+    </message>
 </context>
 </TS>
