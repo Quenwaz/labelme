@@ -2226,9 +2226,14 @@ class MainWindow(QtWidgets.QMainWindow):
             except re.error:
                 pass
         
-        tree_dict= dict()
         topItem = QtWidgets.QTreeWidgetItem()
         topItem.setText(0,self.lastOpenDir)
+        tree_dict ={ 
+                    self.lastOpenDir: {
+                            "item": topItem,
+                            "count": 0
+                    }
+                }
         self.fileTreeWidget.addTopLevelItem(topItem)
         self.fileTreeWidget.setExpanded(self.fileTreeWidget.indexFromItem(topItem,0), True)
         for filename in filenames:
@@ -2247,6 +2252,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 
             relpath:str = os.path.relpath(filename, self.lastOpenDir)
             dirs = relpath.split(os.path.sep)
+            if len(dirs) == 1:dirs.insert(0,self.lastOpenDir)
             current_parent_key = os.path.sep.join(dirs[:-1])
             if not current_parent_key in tree_dict:
                 lastdir = ""
