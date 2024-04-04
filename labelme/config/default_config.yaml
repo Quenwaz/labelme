@@ -1,3 +1,4 @@
+lang: 'zh_CN'  #null, 'zh_CN', 'en_US'
 auto_save: false
 display_label_popup: true
 store_data: true

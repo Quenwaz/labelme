@@ -157,9 +157,9 @@ def main():
             output_dir = output
 
     translator = QtCore.QTranslator()
-    lang = QtCore.QLocale.system().name()
+    lang_config = config["lang"]
     translator.load(
-        QtCore.QLocale.system().name(),
+        lang_config if lang_config else QtCore.QLocale.system().name(),
         osp.dirname(osp.abspath(__file__)) + "/translate",
     )
     app = QtWidgets.QApplication(sys.argv)
