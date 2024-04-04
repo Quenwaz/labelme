@@ -2117,14 +2117,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         
         if topitem.childCount() == 0:
+            if cond and not cond(topitem):
+                return
             filenames.append(str(topitem.data(0, Qt.ItemDataRole.UserRole)))
             return
         
         for i in range(topitem.childCount()):
-            child = topitem.child(i)
-            if cond and not cond(child):
-                continue
-            self.get_all_leaf_item_data(filenames, child)
+            self.get_all_leaf_item_data(filenames,  topitem.child(i), cond)
             
             
     @property
