@@ -1207,6 +1207,47 @@ class MainWindow(QtWidgets.QMainWindow):
         self.actions.copy.setEnabled(n_selected)
         self.actions.edit.setEnabled(n_selected == 1)
 
+    def loadLabelsFromDir(self, path:str):
+        if not self._config["local_label_file"]:
+            return
+        
+        labelDescFile = os.path.join(path, self._config["local_label_file"])
+        if not os.path.exists(labelDescFile):
+            return
+        
+        labels = []
+        with open(labelDescFile, 'r', encoding="utf-8") as fp:
+            labels = fp.readlines()
+            
+        if not labels:
+            return
+        
+        for label in labels:
+            label = label.strip()
+            if not self.uniqLabelList.findItemByLabel(label) is None:
+                continue
+            item = self.uniqLabelList.createItemFromLabel(label)
+            self.uniqLabelList.addItem(item)
+            rgb = self._get_rgb_by_label(label)
+            self.uniqLabelList.setItemLabel(item, label, rgb)
+            self.labelDialog.addLabelHistory(label)
+
+    def dumpLabelsToDir(self, path:str, label):
+        if not path:
+            return
+        
+        if not self._config["local_label_file"]:
+            return
+        
+        labelDescFile = os.path.join(path, self._config["local_label_file"])
+        
+        labels = []
+        with open(labelDescFile, 'a+', encoding="utf-8") as fp:
+            fp.seek(0)
+            labels = [l.strip() for l in fp.readlines()]
+            if not label in labels:
+                fp.write(label + "\n")
+    
     def addLabel(self, shape):
         if shape.group_id is None:
             text = shape.label
@@ -1219,6 +1260,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.uniqLabelList.addItem(item)
             rgb = self._get_rgb_by_label(shape.label)
             self.uniqLabelList.setItemLabel(item, shape.label, rgb)
+            self.dumpLabelsToDir(self.lastOpenDir,shape.label)
         self.labelDialog.addLabelHistory(shape.label)
         for action in self.actions.onShapesPresent:
             action.setEnabled(True)
@@ -2110,6 +2152,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 | QtWidgets.QFileDialog.DontResolveSymlinks,
             )
         )
+        
+        self.loadLabelsFromDir(targetDirPath)
         self.importDirImages(targetDirPath)
         
     def get_all_leaf_item_data(self, filenames:list, topitem:QtWidgets.QTreeWidgetItem, cond:Callable[[QtWidgets.QTreeWidgetItem], bool]=None):
