@@ -33,6 +33,7 @@ from labelme.widgets import ToolBar
 from labelme.widgets import UniqueLabelQListWidget
 from labelme.widgets import ZoomWidget
 import importlib
+import sys
 from typing import Callable
 
 
@@ -1963,7 +1964,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.errorMessage(self.tr("error"),self.tr("directory not empty"))
                     return
                 try:
-                    
+                    sys.path.append(os.path.abspath( os.curdir))
                     exporter = importlib.import_module(EXPORT_MODULE)
                     cvt = getattr(exporter,expfmt, None)
                     if cvt:
