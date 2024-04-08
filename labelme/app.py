@@ -2163,7 +2163,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if topitem.childCount() == 0:
             if cond and not cond(topitem):
                 return
-            filenames.append(str(topitem.data(0, Qt.ItemDataRole.UserRole)))
+            data = topitem.data(0, Qt.ItemDataRole.UserRole)
+            if data:
+                filenames.append(str(data))
             return
         
         for i in range(topitem.childCount()):
@@ -2298,21 +2300,13 @@ class MainWindow(QtWidgets.QMainWindow):
             if len(dirs) == 1:dirs.insert(0,self.lastOpenDir)
             current_parent_key = os.path.sep.join(dirs[:-1])
             if not current_parent_key in tree_dict:
-                lastdir = ""
-                for dir in dirs[:-1]:
-                    if not dir in tree_dict:
-                        new_tree_item = QtWidgets.QTreeWidgetItem()
-                        new_tree_item.setText(0,dir)
-                        
-                        key = dir
-                        if not lastdir:
-                            topItem.addChild(new_tree_item)
-                        else:
-                            os.path.sep.join([lastdir, dir])
-                        tree_dict[key] = {
-                            "item": new_tree_item,
-                            "count": 0
-                        }
+                new_tree_item = QtWidgets.QTreeWidgetItem()
+                new_tree_item.setText(0,current_parent_key)
+                topItem.addChild(new_tree_item)
+                tree_dict[current_parent_key] = {
+                    "item": new_tree_item,
+                    "count": 0
+                }
                 
             filetreeitem.setText(0, dirs[-1])
             filetreeitem.setData(0, Qt.ItemDataRole.UserRole, filename)
@@ -2322,7 +2316,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_parent_object["count"] += 1
             current_parent_item = current_parent_object["item"]
             current_parent_item.addChild(filetreeitem)
-            current_parent_item.setText(0, f"{dirs[-2]}({current_parent_object['count']}/{current_parent_item.childCount()})")
+            current_parent_item.setText(0, f"{current_parent_key}({current_parent_object['count']}/{current_parent_item.childCount()})")
             current_parent_item.setData(0, Qt.ItemDataRole.UserRole, current_parent_object["count"])
             
         self.openNextImg(load=load)
