@@ -63,7 +63,8 @@ class LabelFile(object):
                 format = "PNG"
             
             # fix bug cannot write mode P as JPEG
-            if image_pil.mode == "P":
+            # if image_pil.mode == "P":
+            if image_pil.mode != "RGB":
                 image_pil = image_pil.convert('RGB')
             image_pil.save(f, format=format)
             f.seek(0)
