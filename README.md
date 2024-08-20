@@ -50,6 +50,9 @@ Labelme 是一款图形图像注释工具，其灵感来自 <http://labelme.csai
 - [x] 导出 VOC 格式数据集，用于语义/实例分割。 ([语义分割](examples/semantic_segmentation), [实例分割](examples/instance_segmentation))
 - [x] 导出 COCO 格式数据集，用于实例分割。([实例分割](examples/instance_segmentation))
 
+以下为作者新增功能：
+- [x] 侧边栏支持多级目录， 且可显示标记数目
+- [x] 支持导出特定格式标签，会在exe所在目录生成export.py支持扩展， 编写自己的导出模块， 然后在.labelmerc的export中添加导出名称， 该名称与export.py中的方法名一致。
 
 ## 入门指南
 

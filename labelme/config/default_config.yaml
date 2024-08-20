@@ -126,4 +126,4 @@ shortcuts:
   toggle_all_polygons: T
 
 
-export: ["sample"]
+export: ["sample","yolo"]

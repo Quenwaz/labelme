@@ -64,7 +64,7 @@ def dump_sample_export_script():
     
     with open(sample_script_file, "w") as fp:
         fp.write('''
-import os,shutil 
+import os,shutil,json
 
 def sample(targetDir, sourceImages, labelextension):
     """Export the current label format to your desired label format
@@ -87,6 +87,59 @@ def sample(targetDir, sourceImages, labelextension):
         shutil.copyfile(label_file,  os.path.join(targetDir, "%s%s" % (target_basename, labelextension)))
 
     return len(sourceImages)
+    
+def yolo(targetDir, sourceImages, labelextension):
+    if len(sourceImages) == 0:
+        return 0
+    
+    targetImageDir= os.path.join(targetDir, "images")
+    if not os.path.exists(targetImageDir):
+        os.mkdir(targetImageDir)
+    targetLabelDir= os.path.join(targetDir, "labels")
+    if not os.path.exists(targetLabelDir):
+        os.mkdir(targetLabelDir)
+        
+    classes_file = os.path.join(targetDir, "classes.txt")
+    try:     
+        label_list = []
+        for idx, image_path in enumerate(sourceImages):
+            target_basename = "{:04d}".format(idx)
+            filepath, image_ext = os.path.splitext(image_path)
+            label_file = filepath + labelextension
+            
+            lable_json_content = dict()
+            with open(label_file, 'r', encoding="utf-8") as fp:
+                lable_json_content = json.load(fp)
+            
+            image_width, image_height = lable_json_content["imageWidth"], lable_json_content["imageHeight"]
+            shapes = lable_json_content["shapes"]
+            label_describe = []
+            for shape in shapes:
+                label_name = shape["label"]
+                label_index = len(label_list)
+                if label_name in label_list:
+                    label_index = label_list.index(label_name)
+                else:
+                    label_list.append(label_name)
+                    
+                min_point, max_point = shape["points"]
+                width, height = abs(max_point[0] - min_point[0]),abs(max_point[1] - min_point[1])
+                center_x, center_y = 0.5 * (max_point[0] + min_point[0]), 0.5 * (max_point[1] + min_point[1])
+                label_describe.append("%d %f %f %f %f\n" %(label_index, center_x/image_width, center_y / image_height, width/image_width, height / image_height))
+            
+            target_label_file = os.path.join(targetLabelDir, "%s.txt" % (target_basename,))
+            with open(target_label_file, 'w') as fp:
+                fp.writelines(label_describe)
+                
+            shutil.copyfile(image_path, os.path.join(targetImageDir, "%s%s" % (target_basename, image_ext)))
+        with open(classes_file, 'w') as fp:
+            fp.writelines(["%d: %s\n" % (i, n) for i, n in enumerate(label_list)])
+        return len(sourceImages)
+    except Exception as e:
+        shutil.rmtree(targetImageDir)
+        shutil.rmtree(targetLabelDir)
+    
+    return 0
  ''')
         
 
